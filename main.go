@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"context"
-	"crypto/sha256"
+	"crypto/md5"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -89,7 +89,7 @@ func (p *Poller) DoPoll(ctx context.Context, pr *PollRequest) error {
 	if err != nil {
 		return err
 	}
-	h := fmt.Sprintf("%x", sha256.New().Sum(b))
+	h := fmt.Sprintf("%x", md5.Sum(b))
 
 	if resp.StatusCode == 200 {
 		if p.lastHash == h {
@@ -178,12 +178,14 @@ func (p *Poller) RunOnce(ctx context.Context) error {
 				delay(ctx)
 				continue
 			}
+			log.Infof("Waiting for %v until next iteration", request.Interval)
 			nextc = time.After(request.Interval)
 		} else {
 			log.Infof("Waiting for initial command")
 		}
 		select {
 		case req := <-requestc:
+			log.Infof("Poll target changed.")
 			request = req
 		case err := <-errc:
 			return err
