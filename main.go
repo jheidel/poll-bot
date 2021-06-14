@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -25,6 +26,8 @@ var (
 
 	BuildTimestamp string
 	BuildGitHash   string
+
+	rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
 func Version() string {
@@ -37,6 +40,7 @@ type PollRequest struct {
 	Header   http.Header
 	Body     string
 	Interval time.Duration
+	Jitter   time.Duration
 }
 
 type PollResponse struct {
@@ -178,8 +182,10 @@ func (p *Poller) RunOnce(ctx context.Context) error {
 				delay(ctx)
 				continue
 			}
-			log.Infof("Waiting for %v until next iteration", request.Interval)
-			nextc = time.After(request.Interval)
+			jt := request.Jitter / time.Duration(float64(1)/(rng.Float64()-float64(0.5)))
+			ival := request.Interval + jt
+			log.Infof("Waiting for %v until next iteration", ival)
+			nextc = time.After(ival)
 		} else {
 			log.Infof("Waiting for initial command")
 		}
