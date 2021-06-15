@@ -143,12 +143,12 @@ func (p *Poller) DoPoll(ctx context.Context) error {
 	return p.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
 }
 
-func delay(ctx context.Context) {
+func delay(ctx context.Context, d time.Duration) {
 	if ctx.Err() != nil {
 		return
 	}
 	select {
-	case <-time.After(time.Second):
+	case <-time.After(d):
 	case <-ctx.Done():
 	}
 }
@@ -190,7 +190,7 @@ func (p *Poller) RunOnce(ctx context.Context) error {
 		if p.request != nil {
 			if err := p.DoPoll(ctx); err != nil {
 				log.Errorf("Poll failed: %v", err)
-				delay(ctx)
+				delay(ctx, time.Second)
 				continue
 			}
 			jt := p.request.Jitter / time.Duration(float64(1)/(rng.Float64()-float64(0.5)))
@@ -233,7 +233,7 @@ func main() {
 		p := &Poller{}
 		if err := p.RunOnce(ctx); err != nil {
 			log.Errorf("runOnce %v", err)
-			delay(ctx)
+			delay(ctx, 10*time.Second)
 		}
 	}
 }
