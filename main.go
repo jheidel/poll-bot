@@ -35,7 +35,7 @@ func Version() string {
 }
 
 type PollRequest struct {
-	URL      string
+	URLs     []string
 	Method   string
 	Header   http.Header
 	Body     string
@@ -44,6 +44,7 @@ type PollRequest struct {
 }
 
 type PollResponse struct {
+	FromURL      string
 	Hash         string
 	Status       string
 	StatusCode   int
@@ -66,24 +67,34 @@ func topLevelContext() context.Context {
 }
 
 type Poller struct {
-	conn     *websocket.Conn
-	lastHash string
-	client   *http.Client
+	conn   *websocket.Conn
+	client *http.Client
+
+	request  *PollRequest
+	idx      int
+	lastHash []string
 }
 
-func (p *Poller) DoPoll(ctx context.Context, pr *PollRequest) error {
+func (p *Poller) DoPoll(ctx context.Context) error {
 	if p.client == nil {
 		p.client = &http.Client{
 			Timeout: 30 * time.Second,
 		}
 	}
 
-	log.Infof("Polling %v", pr.URL)
-	req, err := http.NewRequestWithContext(ctx, pr.Method, pr.URL, strings.NewReader(pr.Body))
+	idx := p.idx
+	url := p.request.URLs[idx]
+	p.idx++
+	if p.idx >= len(p.request.URLs) {
+		p.idx = 0
+	}
+
+	log.Infof("Polling %v", url)
+	req, err := http.NewRequestWithContext(ctx, p.request.Method, url, strings.NewReader(p.request.Body))
 	if err != nil {
 		return err
 	}
-	req.Header = pr.Header
+	req.Header = p.request.Header
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return err
@@ -96,15 +107,16 @@ func (p *Poller) DoPoll(ctx context.Context, pr *PollRequest) error {
 	h := fmt.Sprintf("%x", md5.Sum(b))
 
 	if resp.StatusCode == 200 {
-		if p.lastHash == h {
+		if p.lastHash[idx] == h {
 			log.Infof("Response unchanged")
 			return nil
 		}
-		p.lastHash = h
+		p.lastHash[idx] = h
 	}
 
 	hn, _ := os.Hostname()
 	prr := &PollResponse{
+		FromURL:      url,
 		Hash:         h,
 		Status:       resp.Status,
 		StatusCode:   resp.StatusCode,
@@ -173,17 +185,16 @@ func (p *Poller) RunOnce(ctx context.Context) error {
 		}
 	}()
 
-	var request *PollRequest
 	for ctx.Err() == nil {
 		var nextc <-chan time.Time
-		if request != nil {
-			if err := p.DoPoll(ctx, request); err != nil {
+		if p.request != nil {
+			if err := p.DoPoll(ctx); err != nil {
 				log.Errorf("Poll failed: %v", err)
 				delay(ctx)
 				continue
 			}
-			jt := request.Jitter / time.Duration(float64(1)/(rng.Float64()-float64(0.5)))
-			ival := request.Interval + jt
+			jt := p.request.Jitter / time.Duration(float64(1)/(rng.Float64()-float64(0.5)))
+			ival := p.request.Interval + jt
 			log.Infof("Waiting for %v until next iteration", ival)
 			nextc = time.After(ival)
 		} else {
@@ -192,7 +203,9 @@ func (p *Poller) RunOnce(ctx context.Context) error {
 		select {
 		case req := <-requestc:
 			log.Infof("Poll target changed.")
-			request = req
+			p.request = req
+			p.idx = 0
+			p.lastHash = make([]string, len(p.request.URLs))
 		case err := <-errc:
 			return err
 		case <-ctx.Done():
