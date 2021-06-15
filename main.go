@@ -202,6 +202,9 @@ func (p *Poller) RunOnce(ctx context.Context) error {
 		}
 		select {
 		case req := <-requestc:
+			if req == nil {
+				continue
+			}
 			log.Infof("Poll target changed.")
 			p.request = req
 			p.idx = 0
