@@ -23,6 +23,7 @@ import (
 
 var (
 	server = flag.String("server", "wss://www.jeffheidel.com/poll", "Path to control server")
+	port   = flag.Int("port", 8080, "Path for health check server")
 
 	BuildTimestamp string
 	BuildGitHash   string
@@ -219,6 +220,10 @@ func (p *Poller) RunOnce(ctx context.Context) error {
 	return nil
 }
 
+func ServeVersion(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Version: %s", Version())
+}
+
 func main() {
 	flag.Parse()
 
@@ -231,6 +236,9 @@ func main() {
 	log.Infof("Now running %s", Version())
 
 	ctx := topLevelContext()
+
+	http.HandleFunc("/", ServeVersion)
+	go http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
 
 	for ctx.Err() == nil {
 		p := &Poller{}
